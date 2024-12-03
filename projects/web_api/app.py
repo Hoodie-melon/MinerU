@@ -13,11 +13,28 @@ from magic_pdf.data.data_reader_writer import FileBasedDataWriter
 from magic_pdf.pipe.OCRPipe import OCRPipe
 from magic_pdf.pipe.TXTPipe import TXTPipe
 from magic_pdf.pipe.UNIPipe import UNIPipe
+import base64
+import shutil
 
 model_config.__use_inside_model__ = True
 
 app = FastAPI()
 
+def get_base64_encoded_images(image_path):
+    images = []
+    if os.path.exists(image_path):
+        for image_name in os.listdir(image_path):
+            image_file_path = os.path.join(image_path, image_name)
+            with open(image_file_path, "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                # 设置 MIME 类型为 image/jpeg
+                mime_type = "image/jpeg"
+                data_uri = f"data:{mime_type};base64,{encoded_string}"
+                images.append({
+                    "name": image_name,
+                    "base64": data_uri
+                })
+    return images
 
 def json_md_dump(
     pipe,
@@ -136,11 +153,15 @@ async def pdf_parse_main(
 
         if is_json_md_dump:
             json_md_dump(pipe, md_writer, pdf_name, content_list, md_content)
+
+        images = get_base64_encoded_images(output_image_path)
+
         data = {
             'layout': copy.deepcopy(pipe.model_list),
             'info': pipe.pdf_mid_data,
             'content_list': content_list,
             'md_content': md_content,
+            'images': images
         }
         return JSONResponse(data, status_code=200)
 
@@ -151,7 +172,10 @@ async def pdf_parse_main(
         # Clean up the temporary file
         if 'temp_pdf_path' in locals():
             os.unlink(temp_pdf_path)
+        if os.path.exists(output_dir):
+            shutil.rmtree(output_dir)
+            os.makedirs(output_dir)
 
 
 if __name__ == '__main__':
-    uvicorn.run(app, host='0.0.0.0', port=8888)
+    uvicorn.run(app, host='0.0.0.0', port=5004)
